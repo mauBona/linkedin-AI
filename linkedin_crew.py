@@ -1,5 +1,5 @@
 # ==============================================================================
-# LIBRERIE E CONFIGURAZIONE INIZIALE
+# LIBRARIES AND INITIAL SETUP
 # ==============================================================================
 import os
 import json
@@ -13,16 +13,16 @@ from crewai import Agent, Task, Crew, Process
 from crewai_tools import ScrapeWebsiteTool
 from langchain_openai import ChatOpenAI
 
-# Carica le variabili d'ambiente dal file .env
+# Load environment variables from the .env file
 load_dotenv()
 
-# Imposta la lingua per textstat in italiano
-textstat.set_lang("it_IT")
+# Set the language for textstat to English
+textstat.set_lang("en_US")
 
 # ==============================================================================
-# RISORSE E DOCUMENTAZIONE UTILE (come richiesto)
-# =================================================z=============
-# Documentazione CrewAI: https://docs.crewai.com/
+# USEFUL RESOURCES AND DOCUMENTATION (as requested)
+# ==============================================================================
+# CrewAI Documentation: https://docs.crewai.com/
 # EU AI Act: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32024R1689
 # OpenAI API: https://platform.openai.com/docs/
 # LinkedIn API: https://learn.microsoft.com/en-us/linkedin/shared/integrations/social-actions
@@ -30,153 +30,157 @@ textstat.set_lang("it_IT")
 
 
 # ==============================================================================
-# FUNZIONI DI SUPPORTO E MODULARI
+# MODULAR SUPPORT FUNCTIONS
 # ==============================================================================
 
 def setup_llm():
     """
-    Configura e restituisce il modello LLM (Large Language Model) da utilizzare.
-    Utilizza gpt-4o come specificato, leggendo la chiave API dalle variabili d'ambiente.
+    Configures and returns the Large Language Model (LLM) to be used.
+    Uses gpt-4o as specified, reading the API key from environment variables.
     """
     try:
         llm = ChatOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             model_name=os.getenv("OPENAI_MODEL_NAME", "gpt-4o"),
-            temperature=0.7  # Un po' di creatività ma non troppa
+            temperature=0.7  # A bit of creativity, but not too much
         )
         return llm
     except Exception as e:
-        print(f"Errore durante la configurazione dell'LLM: {e}")
-        print("Assicurati di aver impostato correttamente OPENAI_API_KEY e OPENAI_MODEL_NAME nel tuo file .env")
+        print(f"Error during LLM configuration: {e}")
+        print("Please ensure you have correctly set OPENAI_API_KEY and OPENAI_MODEL_NAME in your .env file.")
         return None
 
 def load_feedback(automatic_feedback_file="feedback.json", manual_feedback_file="feedback_manuale.json"):
     """
-    Carica il feedback da file JSON, sia quello generato automaticamente
-    sia quello inserito manualmente, per fornirlo all'Agente Generatore.
+    Loads feedback from JSON files, both automatically generated and
+    manually entered, to provide it to the Generator Agent.
     """
     feedback_points = []
-    # Carica feedback automatico se esiste
+    # Load automatic feedback if it exists
     if os.path.exists(automatic_feedback_file):
-        with open(automatic_feedback_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if "textual_feedback" in data:
-                feedback_points.append(data["textual_feedback"])
+        try:
+            with open(automatic_feedback_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "textual_feedback" in data:
+                    feedback_points.append(data["textual_feedback"])
+        except json.JSONDecodeError:
+            print(f"Warning: Could not decode JSON from {automatic_feedback_file}.")
 
-    # Carica feedback manuale se esiste
+
+    # Load manual feedback if it exists
     if os.path.exists(manual_feedback_file):
-        with open(manual_feedback_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if "manual_feedback" in data:
-                feedback_points.extend(data["manual_feedback"])
+        try:
+            with open(manual_feedback_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "manual_feedback" in data:
+                    feedback_points.extend(data["manual_feedback"])
+        except json.JSONDecodeError:
+            print(f"Warning: Could not decode JSON from {manual_feedback_file}.")
 
     if not feedback_points:
-        return "Nessun feedback precedente disponibile. Parti da zero."
+        return "No previous feedback available. Starting from scratch."
 
-    return "\n- ".join(["Basati su questo feedback per migliorare il post:"] + feedback_points)
+    return "\n- ".join(["Use this feedback to improve the post:"] + feedback_points)
 
 def validate_post(post_content):
     """
-    Valida un post generato secondo i requisiti di qualità.
-    Controlla: lunghezza, presenza di hashtag e leggibilità.
+    Validates a generated post against quality requirements.
+    Checks: length, presence of hashtags, and readability.
     """
-    print("\n--- INIZIO REPORT DI VALIDAZIONE ---")
+    print("\n--- STARTING VALIDATION REPORT ---")
     validation_report = {}
 
-    # 1. Controllo Lunghezza
+    # 1. Length Check
     word_count = len(post_content.split())
     is_length_valid = 200 <= word_count <= 300
     validation_report["word_count"] = {"count": word_count, "is_valid": is_length_valid}
-    print(f"Conteggio parole: {word_count} (Valido: {is_length_valid})")
+    print(f"Word Count: {word_count} (Valid: {is_length_valid})")
 
-    # 2. Controllo Hashtag
+    # 2. Hashtag Check
     required_hashtags = ["#ResponsibleAI", "#EUAIAct"]
     found_hashtags = [tag for tag in required_hashtags if tag in post_content]
     are_hashtags_valid = len(found_hashtags) == len(required_hashtags)
     validation_report["hashtags"] = {"required": required_hashtags, "found": found_hashtags, "is_valid": are_hashtags_valid}
-    print(f"Hashtag richiesti trovati: {found_hashtags} (Valido: {are_hashtags_valid})")
+    print(f"Required Hashtags Found: {found_hashtags} (Valid: {are_hashtags_valid})")
 
-    # 3. Controllo Leggibilità (Flesch Reading Ease)
-    # Nota: textstat funziona meglio con testi più lunghi, ma dà un'indicazione.
-    # Un punteggio > 60 è considerato buono per un pubblico vasto.
+    # 3. Readability Check (Flesch Reading Ease)
+    # Note: textstat works best on longer texts, but gives a good indication.
+    # A score > 60 is considered good for a general audience.
     try:
-        # Usiamo una versione inglese per la valutazione Flesch, dato che il modello è primariamente trainato in inglese
-        # e le formule di leggibilità sono più standardizzate per questa lingua.
-        textstat.set_lang("en_US")
         readability_score = textstat.flesch_reading_ease(post_content)
         is_readable = readability_score >= 60
         validation_report["readability"] = {"flesch_reading_ease_score": readability_score, "is_valid": is_readable}
-        print(f"Punteggio di leggibilità (Flesch Reading Ease): {readability_score:.2f} (Valido: {is_readable})")
+        print(f"Readability Score (Flesch Reading Ease): {readability_score:.2f} (Recommended >= 60: {is_readable})")
     except Exception as e:
-        print(f"Impossibile calcolare la leggibilità: {e}")
+        print(f"Could not calculate readability: {e}")
         validation_report["readability"] = {"error": str(e)}
 
-    # 4. Controllo Link
+    # 4. Link Check
     has_links = "http://" in post_content or "https://" in post_content
     validation_report["links"] = {"found": has_links}
-    print(f"Presenza di link esterni: {has_links}")
+    print(f"Presence of external links: {has_links}")
 
-    print("--- FINE REPORT DI VALIDAZIONE ---\n")
+    print("--- END OF VALIDATION REPORT ---\n")
     return validation_report
 
 def get_linkedin_metrics_mock(post_content):
     """
-    *** FUNZIONE MOCK (SIMULATA) ***
-    Simula la raccolta di metriche dall'API di LinkedIn.
-    In un'applicazione reale, qui andrebbe inserita la chiamata all'API di LinkedIn
-    utilizzando un token OAuth 2.0.
+    *** MOCK (SIMULATED) FUNCTION ***
+    Simulates collecting metrics from the LinkedIn API.
+    In a real application, this is where you would place the call to the LinkedIn API
+    using an OAuth 2.0 token.
     """
-    print("--- ESECUZIONE VALUTAZIONE EFFICACIA (SIMULATA) ---")
-    print("ATTENZIONE: Sto usando dati FITTIZI. Sostituire con chiamate reali all'API LinkedIn.")
+    print("--- RUNNING EFFECTIVENESS EVALUATION (SIMULATED) ---")
+    print("WARNING: Using FAKE data. Replace with real LinkedIn API calls.")
 
-    # Esempio di gestione dell'autenticazione (da implementare)
+    # Example of authentication handling (to be implemented)
     access_token = os.getenv("LINKEDIN_ACCESS_TOKEN")
     if not access_token or access_token == "your_linkedin_access_token_here":
-        print("Token di accesso LinkedIn non configurato. Impossibile procedere con una chiamata reale.")
-        # In questo mock, procediamo comunque con dati fittizi
+        print("LinkedIn access token not configured. Cannot make a real API call.")
+        # In this mock, we proceed with fake data anyway.
 
-    # Dati fittizi per la simulazione
+    # Dummy data for simulation
     mock_metrics = {
         "likes": random.randint(20, 150),
         "comments": random.randint(5, 40),
         "shares": random.randint(2, 25)
     }
-    print(f"Metriche simulate raccolte: Likes={mock_metrics['likes']}, Commenti={mock_metrics['comments']}, Condivisioni={mock_metrics['shares']}")
+    print(f"Simulated metrics gathered: Likes={mock_metrics['likes']}, Comments={mock_metrics['comments']}, Shares={mock_metrics['shares']}")
     return mock_metrics
 
 def analyze_and_generate_feedback(metrics, weights={"likes": 0.2, "comments": 0.5, "shares": 0.3}):
     """
-    Calcola un punteggio di efficacia e genera un feedback testuale.
+    Calculates an effectiveness score and generates textual feedback.
     """
-    # Calcolo punteggio ponderato
+    # Calculate weighted score
     score = (metrics["likes"] * weights["likes"] +
              metrics["comments"] * weights["comments"] +
              metrics["shares"] * weights["shares"])
 
-    # Generazione feedback testuale
-    feedback_text = f"Il post ha ottenuto un punteggio di efficacia di {score:.2f}. "
+    # Generate textual feedback
+    feedback_text = f"The post achieved an effectiveness score of {score:.2f}. "
     if metrics["comments"] < 10:
-        feedback_text += "L'engagement (commenti) è basso. Prova a inserire una domanda più diretta o controversa per stimolare la discussione. "
+        feedback_text += "Engagement (comments) is low. Try asking a more direct or controversial question to stimulate discussion. "
     if metrics["shares"] < 5:
-        feedback_text += "Le condivisioni sono poche. Forse il contenuto non è stato percepito come abbastanza unico o utile. Prova a includere un'infografica o un dato statistico sorprendente. "
+        feedback_text += "Shares are low. The content might not have been perceived as unique or useful enough. Try including an infographic or a surprising statistic. "
     if metrics["likes"] > 100:
-        feedback_text += "Ottimo numero di 'mi piace', il titolo e l'introduzione hanno funzionato bene. Continua su questa strada. "
+        feedback_text += "Great number of likes, the title and intro worked well. Keep this up. "
 
-    print(f"Punteggio di efficacia calcolato: {score:.2f}")
-    print(f"Feedback generato per il prossimo ciclo: {feedback_text}")
-    print("--- FINE VALUTAZIONE EFFICACIA ---\n")
+    print(f"Calculated effectiveness score: {score:.2f}")
+    print(f"Generated feedback for the next cycle: {feedback_text}")
+    print("--- END OF EFFECTIVENESS EVALUATION ---\n")
 
     return {"effectiveness_score": score, "textual_feedback": feedback_text}
 
 def save_results(post_content, validation, evaluation):
     """
-    Salva il post generato, il report di validazione e il feedback
-    in file JSON con timestamp e ID univoco.
+    Saves the generated post, validation report, and feedback
+    to JSON files with a timestamp and unique ID.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     unique_id = str(uuid.uuid4())[:8]
 
-    # Dati da salvare
+    # Data to save
     output_data = {
         "id": unique_id,
         "timestamp": timestamp,
@@ -185,38 +189,38 @@ def save_results(post_content, validation, evaluation):
         "evaluation_feedback": evaluation
     }
 
-    # Salva il post e il report
+    # Save the post and its report
     post_filename = f"post_{timestamp}_{unique_id}.json"
     with open(post_filename, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False, indent=4)
-    print(f"Post e report di validazione salvati in: {post_filename}")
+    print(f"Post and validation report saved to: {post_filename}")
 
-    # Salva il feedback per il prossimo ciclo
+    # Save the feedback for the next cycle
     feedback_filename = "feedback.json"
     with open(feedback_filename, 'w', encoding='utf-8') as f:
         json.dump(evaluation, f, ensure_ascii=False, indent=4)
-    print(f"Feedback per il prossimo ciclo salvato in: {feedback_filename}")
+    print(f"Feedback for the next cycle saved to: {feedback_filename}")
 
 
 # ==============================================================================
-# DEFINIZIONE AGENTI E TASK
+# AGENT AND TASK DEFINITIONS
 # ==============================================================================
 
 def create_linkedin_crew(llm, feedback_context):
     """
-    Crea e assembla la crew di agenti con i loro task.
+    Creates and assembles the crew of agents with their tasks.
     """
-    # Definizione dello strumento per il web scraping
+    # Define the web scraping tool
     web_scraper = ScrapeWebsiteTool()
 
-    # --- AGENTE 1: Generatore di Contenuti ---
+    # --- AGENT 1: Content Generator ---
     generator_agent = Agent(
-        role="Esperto di Responsible AI e EU AI Act",
-        goal="Creare un post LinkedIn settimanale di alta qualità, informativo e coinvolgente, incentrato sulla sicurezza, etica e governance dell'AI, in linea con l'EU AI Act.",
+        role="Expert in Responsible AI and the EU AI Act",
+        goal="Create a high-quality, informative, and engaging weekly LinkedIn post focused on AI safety, ethics, and governance, aligned with the EU AI Act.",
         backstory=(
-            "Sei un rinomato stratega della comunicazione con una profonda conoscenza dell'ecosistema AI, "
-            "specializzato nel tradurre concetti normativi e tecnici complessi in contenuti chiari e pragmatici per un pubblico enterprise. "
-            "Il tuo stile è visionario ma concreto, simile a quello di Satya Nadella, ispirando fiducia e spingendo all'azione."
+            "You are a renowned communications strategist with deep knowledge of the AI ecosystem, "
+            "specializing in translating complex regulatory and technical concepts into clear, pragmatic content for an enterprise audience. "
+            "Your style is visionary yet concrete, similar to Satya Nadella, inspiring trust and driving action."
         ),
         llm=llm,
         tools=[web_scraper],
@@ -224,46 +228,46 @@ def create_linkedin_crew(llm, feedback_context):
         allow_delegation=False
     )
 
-    # --- AGENTE 2: Valutatore di Efficacia (in questo script, il suo lavoro è svolto da funzioni di supporto) ---
-    # Nota: Non definiamo un secondo agente CrewAI per la valutazione perché
-    # l'azione (chiamare API LinkedIn, calcolare metriche) non richiede un LLM.
-    # Viene gestita da funzioni Python deterministiche dopo che il primo agente ha finito.
-    # Questo approccio è più efficiente e meno costoso.
+    # --- AGENT 2: Effectiveness Evaluator (handled by support functions in this script) ---
+    # Note: We don't define a second CrewAI agent for evaluation because the action
+    # (calling LinkedIn API, calculating metrics) does not require an LLM.
+    # It's handled by deterministic Python functions after the first agent is done.
+    # This approach is more efficient and cost-effective.
 
-    # --- TASK: Generazione del Post ---
+    # --- TASK: Post Generation ---
     generation_task = Task(
         description=f"""
-        Crea un post per LinkedIn seguendo scrupolosamente queste direttive:
+        Create a LinkedIn post by strictly following these directives:
 
-        1. **ARGOMENTO**: Scegli un tema specifico relativo alla Responsible AI, come prompt injection, trasparenza degli algoritmi, governance dei dati, o conformità all'EU AI Act.
+        1. **TOPIC**: Choose a specific theme related to Responsible AI, such as prompt injection, algorithmic transparency, data governance, or compliance with the EU AI Act.
 
-        2. **FONTI**: Basa il tuo post su informazioni verificate provenienti da queste fonti autorevoli. Puoi usarne una o più.
-           - EU AI Act ufficiale: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32024R1689
+        2. **SOURCES**: Base your post on verified information from these authoritative sources. You can use one or more.
+           - Official EU AI Act: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32024R1689
            - IEEE Ethics in AI: https://www.ieee.org/content/dam/ieee-org/ieee/web/org/about/initiatives/ieee-ethics-in-ai.pdf
-           - MIT Technology Review (sezione AI): https://www.technologyreview.com/tag/artificial-intelligence/
+           - MIT Technology Review (AI section): https://www.technologyreview.com/tag/artificial-intelligence/
 
-        3. **STRUTTURA DEL POST**:
-           - **Titolo Accattivante**: Massimo 10 parole. Deve essere incisivo (es. 'AI Sicura: Oltre la Conformità, Verso la Fiducia').
-           - **Introduzione**: 3-4 frasi (40-60 parole). Inizia con una domanda provocatoria o un'affermazione audace per catturare l'attenzione.
-           - **Corpo del Testo**: 10-12 righe (120-180 parole). Spiega il concetto chiave scelto. Includi un esempio pratico o un breve caso di studio per rendere il contenuto tangibile.
-           - **Conclusione**: 2-3 righe (20-40 parole). Termina con una chiara call-to-action e 1-2 link pertinenti presi dalle fonti.
+        3. **POST STRUCTURE**:
+           - **Catchy Title**: Max 10 words. Must be impactful (e.g., 'Secure AI: Beyond Compliance, Towards Trust').
+           - **Introduction**: 3-4 sentences (40-60 words). Start with a provocative question or a bold statement to grab attention.
+           - **Body**: 10-12 lines (120-180 words). Explain the chosen key concept. Include a practical example or a brief case study to make the content tangible.
+           - **Conclusion**: 2-3 lines (20-40 words). End with a clear call-to-action and 1-2 relevant links from the sources.
 
-        4. **STILE E LINGUAGGIO**:
-           - **Tono**: Visionario e pragmatico. Ispira i lettori ma fornisci anche consigli pratici.
-           - **Linguaggio**: Chiaro, diretto e accessibile a un pubblico professionale non necessariamente tecnico. Evita il gergo complesso.
+        4. **STYLE AND LANGUAGE**:
+           - **Tone**: Visionary and pragmatic. Inspire readers but also provide practical advice.
+           - **Language**: Clear, direct, and accessible to a professional, non-technical audience. Avoid complex jargon.
 
-        5. **FORMATTAZIONE**:
-           - **Lunghezza Totale**: Tra 200 e 300 parole.
-           - **Hashtag Obbligatori**: Termina il post ESATTAMENTE con '#ResponsibleAI #EUAIAct'. Non aggiungere altri hashtag.
+        5. **FORMATTING**:
+           - **Total Length**: Between 200 and 300 words.
+           - **Mandatory Hashtags**: End the post EXACTLY with '#ResponsibleAI #EUAIAct'. Do not add other hashtags.
 
-        6. **FEEDBACK DA CONSIDERARE**:
+        6. **FEEDBACK TO CONSIDER**:
            {feedback_context}
         """,
         agent=generator_agent,
-        expected_output="Un post per LinkedIn completo, formattato come testo semplice, pronto per essere copiato e incollato. Il post deve rispettare TUTTE le direttive fornite, inclusi lunghezza, struttura, tono e hashtag."
+        expected_output="A complete LinkedIn post, formatted as plain text, ready to be copied and pasted. The post must adhere to ALL the provided directives, including length, structure, tone, and hashtags."
     )
 
-    # Assembla la crew
+    # Assemble the crew
     linkedin_crew = Crew(
         agents=[generator_agent],
         tasks=[generation_task],
@@ -274,74 +278,74 @@ def create_linkedin_crew(llm, feedback_context):
     return linkedin_crew
 
 # ==============================================================================
-# ESECUZIONE PRINCIPALE
+# MAIN EXECUTION BLOCK
 # ==============================================================================
 
 if __name__ == "__main__":
-    print("--- AVVIO DEL PROCESSO DI CREAZIONE POST LINKEDIN ---")
+    print("--- STARTING LINKEDIN POST CREATION PROCESS ---")
 
-    # 1. Configura LLM
+    # 1. Configure LLM
     llm = setup_llm()
 
     if llm:
-        # 2. Carica feedback esistente
-        feedback_context = load_feedback()
-        print("\n--- Feedback caricato per il generatore ---")
+        # 2. Load existing feedback
+        # I'll rename the manual feedback file to be in English as well
+        feedback_context = load_feedback(manual_feedback_file="manual_feedback.json")
+        print("\n--- Feedback loaded for the generator ---")
         print(feedback_context)
         print("-----------------------------------------\n")
 
-        # 3. Crea e avvia la crew
+        # 3. Create and kick off the crew
         crew = create_linkedin_crew(llm, feedback_context)
-        print("\n--- La CrewAI è pronta. Avvio del task di generazione... ---\n")
+        print("\n--- CrewAI is ready. Kicking off the generation task... ---\n")
         generated_post = crew.kickoff()
 
-        print("\n\n--- TASK DI GENERAZIONE COMPLETATO ---")
-        print("Post generato dal sistema:")
+        print("\n\n--- GENERATION TASK COMPLETE ---")
+        print("Post generated by the system:")
         print("--------------------------------------------------")
         print(generated_post)
         print("--------------------------------------------------")
 
-        # 4. Valida il post generato
+        # 4. Validate the generated post
         validation_report = validate_post(generated_post)
 
-        # 5. Valuta l'efficacia (con dati simulati)
+        # 5. Evaluate effectiveness (with simulated data)
         mock_metrics = get_linkedin_metrics_mock(generated_post)
         evaluation_result = analyze_and_generate_feedback(mock_metrics)
 
-        # 6. Salva tutti i risultati
+        # 6. Save all results
         save_results(generated_post, validation_report, evaluation_result)
 
-        print("\n--- PROCESSO COMPLETATO ---")
-        print("Controlla i file JSON generati per i dettagli completi.")
+        print("\n--- PROCESS COMPLETE ---")
+        print("Check the generated JSON files for full details.")
 
     else:
-        print("Processo interrotto a causa di un errore di configurazione dell'LLM.")
+        print("Process aborted due to an LLM configuration error.")
 
 # ==============================================================================
-# SUGGERIMENTI PER MIGLIORAMENTI FUTURI (come richiesto)
+# SUGGESTIONS FOR FUTURE IMPROVEMENTS (as requested)
 # ==============================================================================
-# 1. Caching delle Fonti: Per evitare di scaricare le stesse fonti (es. EU AI Act)
-#    ad ogni esecuzione, si potrebbe implementare un sistema di caching.
-#    Prima di chiamare `ScrapeWebsiteTool`, controlla se il contenuto è già stato
-#    scaricato di recente e salvato localmente.
+# 1. Source Caching: To avoid re-downloading the same sources (e.g., the EU AI Act)
+#    on every run, a caching system could be implemented. Before calling
+#    `ScrapeWebsiteTool`, check if the content has been recently downloaded and
+#    saved locally.
 #
-# 2. Test A/B per Titoli: Modifica l'Agente Generatore per creare due o tre
-#    varianti del titolo. Un altro task potrebbe poi scegliere il migliore
-#    basandosi su metriche predittive di engagement (es. usando un modello addestrato).
+# 2. A/B Testing for Headlines: Modify the Generator Agent to create two or three
+#    headline variations. Another task could then choose the best one based on
+#    predictive engagement metrics (e.g., using a trained model).
 #
-# 3. Analisi di Sentiment sui Commenti: Nella versione reale con l'API di LinkedIn,
-#    raccogli non solo il numero di commenti ma anche il loro testo. Usa una
-#    libreria di NLP (es. NLTK, spaCy) per eseguire un'analisi di sentiment.
-#    Questo darebbe un feedback qualitativo molto più ricco (es. "Il sentiment
-#    era negativo, forse il tema era troppo controverso").
+# 3. Sentiment Analysis on Comments: In the real version with the LinkedIn API,
+#    collect not just the number of comments but also their text. Use an NLP
+#    library (e.g., NLTK, spaCy) to perform sentiment analysis. This would
+#    provide much richer qualitative feedback (e.g., "The sentiment was negative,
+#    perhaps the topic was too controversial").
 #
-# 4. Parallelizzazione: Se i task fossero indipendenti (es. generare post per
-#    piattaforme diverse), si potrebbe impostare `process=Process.parallel`
-#    nella Crew per velocizzare l'esecuzione. In questo caso, il processo è
-#    intrinsecamente sequenziale.
+# 4. Parallelization: If tasks were independent (e.g., generating posts for
+#    different platforms), you could set `process=Process.parallel` in the Crew
+#    to speed up execution. In this case, the process is inherently sequential.
 #
-# 5. Integrazione Reale LinkedIn API: La funzione `get_linkedin_metrics_mock`
-#    deve essere sostituita con una classe o un modulo che gestisca il flusso
-#    OAuth 2.0 per l'autenticazione e le chiamate agli endpoint reali, con una
-#    gestione robusta degli errori (rate limiting, token scaduti, etc.).
+# 5. Real LinkedIn API Integration: The `get_linkedin_metrics_mock` function
+#    should be replaced with a class or module that handles the full OAuth 2.0
+#    flow for authentication and calls to the real endpoints, with robust error
+#    handling (rate limiting, expired tokens, etc.).
 # ==============================================================================
