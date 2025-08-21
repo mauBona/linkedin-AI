@@ -13,7 +13,7 @@ This project uses the CrewAI library and the OpenAI API (GPT-4o) to automate the
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.8 or higher (tested with Python 3.11.6)
 - An OpenAI account with an API key
 
 ## Installation and Setup
