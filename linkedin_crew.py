@@ -9,8 +9,10 @@ from dotenv import load_dotenv
 import textstat
 import random
 
+import requests
+from bs4 import BeautifulSoup
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import ScrapeWebsiteTool
+from crewai_tools import BaseTool
 from langchain_openai import ChatOpenAI
 
 # Load environment variables from the .env file
@@ -203,15 +205,40 @@ def save_results(post_content, validation, evaluation):
 
 
 # ==============================================================================
+# CUSTOM TOOL DEFINITION
+# ==============================================================================
+class SimpleScraperTool(BaseTool):
+    name: str = "Simple Website Scraper"
+    description: str = "A simple tool to scrape the text content of a website given its URL."
+
+    def _run(self, url: str) -> str:
+        """Scrapes the text content of a website."""
+        try:
+            response = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            for script_or_style in soup(["script", "style"]):
+                script_or_style.decompose()
+            text = soup.get_text()
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = '\n'.join(chunk for chunk in chunks if chunk)
+            return text[:4000]
+        except requests.exceptions.RequestException as e:
+            return f"Error while scraping website {url}: {e}"
+
+
+# ==============================================================================
 # AGENT AND TASK DEFINITIONS
 # ==============================================================================
 
 def create_linkedin_crew(llm, feedback_context):
     """
     Creates and assembles the crew of agents with their tasks.
+    This version uses a custom, reliable web scraper.
     """
-    # Define the web scraping tool
-    web_scraper = ScrapeWebsiteTool()
+    # Instantiate the custom tool
+    web_scraper = SimpleScraperTool()
 
     # --- AGENT 1: Content Generator ---
     generator_agent = Agent(
@@ -228,12 +255,6 @@ def create_linkedin_crew(llm, feedback_context):
         allow_delegation=False
     )
 
-    # --- AGENT 2: Effectiveness Evaluator (handled by support functions in this script) ---
-    # Note: We don't define a second CrewAI agent for evaluation because the action
-    # (calling LinkedIn API, calculating metrics) does not require an LLM.
-    # It's handled by deterministic Python functions after the first agent is done.
-    # This approach is more efficient and cost-effective.
-
     # --- TASK: Post Generation ---
     generation_task = Task(
         description=f"""
@@ -241,7 +262,7 @@ def create_linkedin_crew(llm, feedback_context):
 
         1. **TOPIC**: Choose a specific theme related to Responsible AI, such as prompt injection, algorithmic transparency, data governance, or compliance with the EU AI Act.
 
-        2. **SOURCES**: Base your post on verified information from these authoritative sources. You can use one or more.
+        2. **SOURCES**: Use your web scraping tool to read the content from one or more of these authoritative sources. Your final post must be based on the information you find.
            - Official EU AI Act: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32024R1689
            - IEEE Ethics in AI: https://www.ieee.org/content/dam/ieee-org/ieee/web/org/about/initiatives/ieee-ethics-in-ai.pdf
            - MIT Technology Review (AI section): https://www.technologyreview.com/tag/artificial-intelligence/
