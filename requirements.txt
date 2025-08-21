@@ -5,4 +5,4 @@ python-dotenv==1.0.1
 textstat==0.7.3
 requests==2.32.3
 beautifulsoup4==4.12.3
-crewai-tools==0.1.7
+crewai-tools==0.0.2
