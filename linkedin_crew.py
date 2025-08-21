@@ -16,7 +16,8 @@ from crewai_tools import BaseTool
 from langchain_openai import ChatOpenAI
 
 # Load environment variables from the .env file
-load_dotenv()
+# override=True ensures that the .env file takes precedence over existing environment variables.
+load_dotenv(override=True)
 
 # Set the language for textstat to English
 textstat.set_lang("en_US")
