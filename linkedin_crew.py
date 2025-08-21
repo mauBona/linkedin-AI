@@ -278,11 +278,16 @@ def create_linkedin_crew(llm, feedback_context):
            - **Tone**: Visionary and pragmatic. Inspire readers but also provide practical advice.
            - **Language**: Clear, direct, and accessible to a professional, non-technical audience. Avoid complex jargon.
 
-        5. **FORMATTING**:
-           - **Total Length**: Between 200 and 300 words.
-           - **Mandatory Hashtags**: End the post EXACTLY with '#ResponsibleAI #EUAIAct'. Do not add other hashtags.
-
-        6. **FEEDBACK TO CONSIDER**:
+        5. **LANGUAGE**:
+        - Genera il post **prima in italiano**.
+        - Fornisci **subito sotto la versione in inglese**, mantenendo tono e contenuti equivalenti.
+        - Le due versioni devono essere chiare e leggibili come due sezioni distinte.
+        
+        6. **FORMATTING**:
+        - Lunghezza totale: 220-300 parole.
+        - Conclusione SEMPRE con hashtag: `#ResponsibleAI #EUAIAct` + max 3 ulteriori coerenti.
+        
+        7. **FEEDBACK TO CONSIDER**:
            {feedback_context}
         """,
         agent=generator_agent,
